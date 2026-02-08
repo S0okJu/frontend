@@ -1,0 +1,126 @@
+name: Deploy to NHN Cloud Object Storage (S3 API)
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch: # 수동 실행 가능
+
+env:
+  NODE_VERSION: '18'
+  BUCKET_NAME: 'photo-frontend' # NHN Cloud Object Storage 컨테이너명
+  VITE_API_BASE_URL: '/api' # 프로덕션 API URL
+  AWS_REGION: 'kr1' # NHN Cloud 리전
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+      
+      - name: Verify build output
+        run: |
+          echo "Build completed successfully!"
+          echo "Build output directory:"
+          ls -lh dist/
+          echo ""
+          echo "Total size:"
+          du -sh dist/
+      
+      - name: Configure AWS CLI for NHN Cloud
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.NHN_S3_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.NHN_S3_SECRET_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Upload to Object Storage (S3 API)
+        run: |
+          # S3 sync로 파일 업로드
+          aws s3 sync dist/ s3://${{ env.BUCKET_NAME }}/ \
+            --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+            --acl public-read \
+            --cache-control "public, max-age=31536000" \
+            --exclude "index.html" \
+            --exclude "share-preview.html"
+          
+          # HTML 파일은 캐시 설정 다르게 (짧게)
+          aws s3 cp dist/index.html s3://${{ env.BUCKET_NAME }}/index.html \
+            --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+            --acl public-read \
+            --content-type "text/html" \
+            --cache-control "public, max-age=300"
+          
+          if [ -f "dist/share-preview.html" ]; then
+            aws s3 cp dist/share-preview.html s3://${{ env.BUCKET_NAME }}/share-preview.html \
+              --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+              --acl public-read \
+              --content-type "text/html" \
+              --cache-control "public, max-age=300"
+          fi
+          
+          echo "Upload completed!"
+      
+      - name: Set correct Content-Type for assets
+        run: |
+          # JavaScript 파일
+          aws s3 cp s3://${{ env.BUCKET_NAME }}/assets/ s3://${{ env.BUCKET_NAME }}/assets/ \
+            --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+            --recursive \
+            --exclude "*" \
+            --include "*.js" \
+            --content-type "application/javascript" \
+            --metadata-directive REPLACE \
+            --acl public-read \
+            --cache-control "public, max-age=31536000"
+          
+          # CSS 파일
+          aws s3 cp s3://${{ env.BUCKET_NAME }}/assets/ s3://${{ env.BUCKET_NAME }}/assets/ \
+            --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+            --recursive \
+            --exclude "*" \
+            --include "*.css" \
+            --content-type "text/css" \
+            --metadata-directive REPLACE \
+            --acl public-read \
+            --cache-control "public, max-age=31536000"
+      
+      - name: Verify deployment
+        run: |
+          echo "Listing uploaded files..."
+          aws s3 ls s3://${{ env.BUCKET_NAME }}/ \
+            --endpoint-url https://kr1-api-object-storage.nhncloudservice.com \
+            --recursive | head -20
+          echo ""
+          echo "Deployment completed successfully!"
+          echo ""
+          echo "Access URL:"
+          echo "https://kr1-api-object-storage.nhncloudservice.com/v1/AUTH_<TENANT_ID>/${{ env.BUCKET_NAME }}/index.html"
+          echo ""
+          echo "Or via CDN (if configured):"
+          echo "https://your-cdn-domain.com/"
+      
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi
