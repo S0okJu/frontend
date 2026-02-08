@@ -6,27 +6,24 @@ master 브랜치에 머지되면 자동으로 NHN Cloud Object Storage에 배포
 
 두 가지 방식 중 하나를 선택하여 사용하세요:
 
-### 1. Swift API 방식 (deploy-to-object-storage.yml)
-- NHN Cloud의 Swift API 사용
-- Python Swift Client 사용
-- 더 세밀한 제어 가능
+### 1. Swift API 방식 (deploy-to-object-storage.yml) ⭐ 권장
+- **NHN Cloud 네이티브 Object Storage API** 사용 (Identity 토큰 + Swift PUT)
+- S3 서명(SignatureDoesNotMatch) 이슈 없음
+- Identity 인증만 있으면 됨 (S3 API 자격 증명 불필요)
 
-### 2. S3 API 방식 (deploy-to-object-storage-s3.yml) ⭐ 권장
-- AWS S3 호환 API 사용
-- AWS CLI 사용 (더 친숙함)
-- 더 간단하고 빠름
-
-**권장**: S3 API 방식을 사용하세요. 더 간단하고 AWS CLI에 익숙하다면 사용하기 쉽습니다.
+### 2. S3 API 방식 (deploy-to-object-storage-s3.yml)
+- AWS S3 호환 API + AWS CLI
+- NHN S3 자격 증명 필요. 서명/리전 설정에 따라 오류가 날 수 있음
 
 ## 사용하지 않는 워크플로우 비활성화
 
-하나만 사용할 경우, 사용하지 않는 워크플로우 파일을 삭제하거나 이름을 변경하세요:
+하나만 사용할 경우, 사용하지 않는 워크플로우 파일 이름을 변경하세요:
 
 ```bash
-# Swift API 방식만 사용하는 경우
+# Swift API 방식만 사용하는 경우 (권장)
 mv .github/workflows/deploy-to-object-storage-s3.yml .github/workflows/deploy-to-object-storage-s3.yml.disabled
 
-# S3 API 방식만 사용하는 경우 (권장)
+# S3 API 방식만 사용하는 경우
 mv .github/workflows/deploy-to-object-storage.yml .github/workflows/deploy-to-object-storage.yml.disabled
 ```
 
@@ -35,16 +32,16 @@ mv .github/workflows/deploy-to-object-storage.yml .github/workflows/deploy-to-ob
 **Repository secrets**를 사용합니다.  
 GitHub Repository Settings > **Secrets and variables** > **Actions** > **Repository secrets**에서 다음 Secrets를 추가하세요. (Environment secret이 아닌 Repository secret입니다.)
 
-### Swift API 방식 사용 시
+### Swift API 방식 사용 시 (권장)
 
 | Secret 이름 | 설명 | 예시 |
 |------------|------|------|
 | `NHN_AUTH_URL` | NHN Cloud Identity 인증 URL | `https://api-identity-infrastructure.nhncloudservice.com/v2.0` |
 | `NHN_TENANT_ID` | NHN Cloud Tenant ID (프로젝트 ID) | `1234567890abcdef` |
+| `NHN_USERNAME` | NHN Cloud API 사용자(이메일 등) | `user@example.com` |
 | `NHN_API_PASSWORD` | NHN Cloud API Password | `your-api-password` |
-| `NHN_REGION` | NHN Cloud 리전 | `KR1` |
 
-### S3 API 방식 사용 시 ⭐
+### S3 API 방식 사용 시
 
 | Secret 이름 | 설명 | 예시 |
 |------------|------|------|
