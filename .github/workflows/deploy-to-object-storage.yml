@@ -60,18 +60,14 @@ jobs:
           NHN_TENANT_ID: ${{ secrets.NHN_TENANT_ID }}
           NHN_USERNAME: ${{ secrets.NHN_USERNAME }}
           NHN_API_PASSWORD: ${{ secrets.NHN_API_PASSWORD }}
-          NHN_PASSWORD: ${{ secrets.NHN_PASSWORD }}
         run: |
-          # NHN_API_PASSWORD 없으면 NHN_PASSWORD 사용 (photo-api와 동일 Secret 공유 가능)
-          NHN_PASS="${NHN_API_PASSWORD:-$NHN_PASSWORD}"
-          if [ -z "$NHN_AUTH_URL" ] || [ -z "$NHN_TENANT_ID" ] || [ -z "$NHN_USERNAME" ] || [ -z "$NHN_PASS" ]; then
-            echo "::error::필수 Secret이 비어 있습니다. Repository Settings > Secrets and variables > Actions에서 설정하세요."
-            echo "필요: NHN_AUTH_URL, NHN_TENANT_ID, NHN_USERNAME, NHN_API_PASSWORD(또는 NHN_PASSWORD)"
+          if [ -z "$NHN_AUTH_URL" ] || [ -z "$NHN_TENANT_ID" ] || [ -z "$NHN_USERNAME" ] || [ -z "$NHN_API_PASSWORD" ]; then
+            echo "::error::필수 Secret이 비어 있습니다. NHN_AUTH_URL, NHN_TENANT_ID, NHN_USERNAME, NHN_API_PASSWORD 설정하세요."
             exit 1
           fi
           RES=$(curl -s -X POST "${NHN_AUTH_URL%/}/tokens" \
             -H "Content-Type: application/json" \
-            -d '{"auth":{"tenantId":"'"$NHN_TENANT_ID"'","passwordCredentials":{"username":"'"$NHN_USERNAME"'","password":"'"$NHN_PASS"'"}}}')
+            -d '{"auth":{"tenantId":"'"$NHN_TENANT_ID"'","passwordCredentials":{"username":"'"$NHN_USERNAME"'","password":"'"$NHN_API_PASSWORD"'"}}}')
           TOKEN=$(echo "$RES" | jq -r '.access.token.id')
           if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
             echo "Token response (masked): $(echo "$RES" | head -c 200)..." >> $GITHUB_STEP_SUMMARY

@@ -34,6 +34,8 @@ GitHub Repository Settings > **Secrets and variables** > **Actions** > **Reposit
 
 ### Swift API 방식 사용 시 (권장)
 
+아래 **4개만** 설정하면 됩니다.
+
 | Secret 이름 | 설명 | 예시 |
 |------------|------|------|
 | `NHN_AUTH_URL` | NHN Cloud Identity 인증 URL | `https://api-identity-infrastructure.nhncloudservice.com/v2.0` |
