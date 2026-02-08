@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { apiEndpoints } from '../../config/api';
+import { apiEndpoints, getImageUrl } from '../../config/api';
 import './ImageModal.css';
 
 function ImageModal({ image, onClose }) {
@@ -34,10 +34,10 @@ function ImageModal({ image, onClose }) {
 
       // CDN URL에서 파일 다운로드
       // Auth Token이 이미 URL에 ?token=... 형식으로 포함되어 있음
-      const response = await fetch(image.url, {
+      const imageRequestUrl = getImageUrl(image.url);
+      const response = await fetch(imageRequestUrl, {
         method: 'GET',
         mode: 'cors',
-        // CDN Auth Token은 URL 쿼리 파라미터로 포함되므로 별도 헤더 불필요
       });
 
       if (!response.ok) {
@@ -134,7 +134,7 @@ function ImageModal({ image, onClose }) {
         
         <div className="modal-content">
           <div className="modal-image-container">
-            <img src={image.url} alt={image.name} />
+            <img src={getImageUrl(image.url)} alt={image.name} />
           </div>
           
           <div className="modal-info">
