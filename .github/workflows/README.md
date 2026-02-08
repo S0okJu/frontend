@@ -43,6 +43,9 @@ GitHub Repository Settings > **Secrets and variables** > **Actions** > **Reposit
 | `NHN_USERNAME` | NHN Cloud API 사용자(이메일 등) | `user@example.com` |
 | `NHN_API_PASSWORD` | NHN Cloud API Password | `your-api-password` |
 
+**API가 프록시가 아니라 별도 URL일 때** (선택): `API_BASE_URL` Secret에 백엔드 주소를 넣으면 빌드 시 적용됩니다.  
+예: `https://api.example.com` (끝에 `/` 없이). 없으면 `/api`(프록시)로 빌드됩니다.
+
 ### S3 API 방식 사용 시
 
 | Secret 이름 | 설명 | 예시 |

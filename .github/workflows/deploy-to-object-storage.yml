@@ -21,13 +21,15 @@ on:
 env:
   NODE_VERSION: '18'
   BUCKET_NAME: 'photo-frontend'
-  VITE_API_BASE_URL: '/api'
+  # API가 별도 URL이면 Repository Secret에 API_BASE_URL 설정 (예: https://api.example.com). 없으면 /api(프록시) 사용
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
       NHN_REGION: ${{ github.event.inputs.region || 'kr1' }}
+      # Secret API_BASE_URL 있으면 그대로, 없으면 /api
+      VITE_API_BASE_URL: ${{ secrets.API_BASE_URL || '/api' }}
 
     steps:
       - name: Checkout code

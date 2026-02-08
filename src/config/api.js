@@ -1,17 +1,18 @@
 /**
  * API Configuration
- * 
- * 백엔드 API URL을 환경 변수 또는 기본값으로 관리합니다.
- * 
- * 환경 변수 우선순위:
- * 1. import.meta.env.VITE_API_BASE_URL (Vite 환경 변수)
- * 2. window.APP_CONFIG?.apiBaseUrl (런타임 설정)
- * 3. 기본값: http://localhost:8000
- * 
- * 프로덕션 배포 시:
- * - nginx를 통해 /api 경로로 프록시 설정
- * - VITE_API_BASE_URL을 빌드 시 설정하거나
- * - window.APP_CONFIG를 통해 런타임에 설정
+ *
+ * 백엔드 API Base URL을 환경 변수 또는 기본값으로 관리합니다.
+ * 프록시(/api)가 아니라 별도 도메인(https://api.example.com)으로 둘 수도 있습니다.
+ *
+ * 우선순위:
+ * 1. VITE_API_BASE_URL (빌드 시)
+ * 2. window.APP_CONFIG.apiBaseUrl (런타임)
+ * 3. 개발 시 기본값: http://localhost:8000
+ * 4. 프로덕션 기본값: /api (프록시 사용 시)
+ *
+ * URL 분리 배포 시: 빌드 시 또는 런타임에 전체 URL 설정
+ * - 빌드 시: VITE_API_BASE_URL=https://api.example.com
+ * - 런타임: index.html에 window.APP_CONFIG={apiBaseUrl:'https://api.example.com'};
  */
 
 // Vite 환경 변수에서 API URL 가져오기
@@ -31,7 +32,7 @@ const getApiBaseUrl = () => {
     return 'http://localhost:8000';
   }
 
-  // 4. 프로덕션 기본값 (nginx 프록시 사용)
+  // 4. 프로덕션 기본값 (프록시 사용 시 /api, URL 분리 시 빌드/런타임에서 설정)
   return '/api';
 };
 
