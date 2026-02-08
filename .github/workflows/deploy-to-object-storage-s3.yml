@@ -54,11 +54,10 @@ jobs:
           echo "Total size:"
           du -sh dist/
       
-      # NHN Cloud는 AWS가 아니므로 configure-aws-credentials 사용 시
-      # sts.kr1.amazonaws.com 조회로 ENOTFOUND 발생 → 환경 변수만 설정
-      # 서명(SigV4): S3 호환 스토리지는 리전을 us-east-1로 고정해야 SignatureDoesNotMatch 방지
-      # 실제 요청은 아래 --endpoint-url로 NHN 엔드포인트 사용
-      - name: Configure S3 credentials for NHN Cloud
+      # NHN Cloud Object Storage = AWS S3 호환 API (동일 키/시크릿 형식, aws cli 사용)
+      # configure-aws-credentials 액션은 실제 AWS 전용이라 sts.kr1.amazonaws.com 조회 → ENOTFOUND 되므로 수동 설정
+      # 서명(SigV4): NHN이 서명 검증 시 리전을 us-east-1로 기대 → us-east-1 고정. 요청 주소는 아래 --endpoint-url로 NHN(kr1/kr2) 사용
+      - name: Configure AWS credentials for NHN Cloud (S3 API)
         run: |
           echo "AWS_ACCESS_KEY_ID=${{ secrets.NHN_S3_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.NHN_S3_SECRET_KEY }}" >> $GITHUB_ENV
