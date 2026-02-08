@@ -11,7 +11,7 @@ frontend 애플리케이션을 CDN에 배포하는 방법을 설명합니다.
 개발 환경의 소스 코드(JSX, TypeScript 등)는 브라우저에서 직접 실행할 수 없으므로, 빌드 과정을 통해 정적 파일로 변환해야 합니다.
 
 ## 빌드 방법
-
+.
 ### 1. 의존성 설치
 
 ```bash
@@ -222,30 +222,58 @@ app.add_middleware(
 )
 ```
 
-## SPA 라우팅 설정
+## SPA 라우팅 설정 (공유 링크 `/share/xxx` 등)
 
-React Router를 사용하므로, 모든 경로를 `index.html`로 리다이렉트해야 합니다.
+React Router를 사용하므로, **직접 URL 접근**(예: `/share/abc123`, `/albums`, `/login`) 시에도 `index.html`이 반환되어야 합니다. 그렇지 않으면 서버가 404를 주고 SPA가 로드되지 않습니다.
 
-### Object Storage 정적 웹사이트
+### CDN만 사용할 때 (nginx 없이) — 필수 설정
 
-```bash
-# Error Document를 index.html로 설정
-# NHN Cloud Console > Object Storage > 컨테이너 설정
-# - Error Document: index.html
-```
+프론트를 **Object Storage + CDN**으로만 서빙하면, `/share/토큰` 같은 경로는 **실제 파일이 없어 404**가 납니다. 아래 중 하나를 반드시 해두어야 공유 링크가 동작합니다.
 
-### nginx
+#### 1) Object Storage 원본에서 Error Document 설정 (권장)
 
-```nginx
-# nginx.conf에 이미 설정됨
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
+원본(Object Storage)에서 **404일 때 `index.html`을 반환**하도록 설정합니다. CDN은 그 응답을 그대로 캐시·전달합니다.
 
-### Cloudflare Pages
+- **NHN Cloud Console**  
+  **Storage > Object Storage** → 해당 컨테이너 선택 → **컨테이너 설정** (또는 정적 웹사이트 설정)  
+  - **Index Document**: `index.html`  
+  - **Error Document**: `index.html`  ← 이 설정이 있어야 `/share/xxx` 등이 SPA로 열림  
 
-자동으로 SPA 라우팅 지원
+NHN에서 “정적 웹사이트” 또는 “Error Document” 옵션이 없다면, 콘솔 메뉴 이름이 다를 수 있으니 Object Storage 문서를 참고하거나 지원에 문의하세요.
+
+#### 2) CDN에서 404 시 index.html 반환 (CDN이 지원하는 경우)
+
+일부 CDN은 **404일 때 커스텀 페이지(예: `/index.html`)를 200으로 반환**하는 기능을 제공합니다.  
+NHN CDN에 해당 기능이 있으면, 404 시 `index.html` 내용을 반환하도록 설정하면 됩니다.
+
+#### 3) 대안: Hash 라우팅 사용
+
+Object Storage / CDN에서 위 설정을 할 수 없으면, **HashRouter**로 공유 링크를 `https://도메인/#/share/토큰` 형태로 쓰는 방법이 있습니다. 서버는 항상 `/`만 보므로 별도 설정 없이 동작합니다. 단, URL에 `#`이 들어갑니다.
+
+- 공유 URL 형식: `https://your-cdn.com/#/share/토큰`
+- 적용 방법: [아래 HashRouter 옵션](#hashrouter-대안) 참고
+
+---
+
+### 환경별 요약
+
+| 환경 | 설정 |
+|------|------|
+| **Object Storage + CDN** | 컨테이너 **Error Document = index.html** (필수). CDN 404 커스텀 페이지 지원 시 거기서도 설정 가능. |
+| **nginx** | `try_files $uri $uri/ /index.html;` (프론트용 nginx.conf에 이미 있음) |
+| **Cloudflare Pages** | 기본 지원 |
+| **AWS CloudFront + S3** | S3 버킷 정적 웹사이트 호스팅 사용 후, Error Document = index.html. CloudFront에서 403/404 Custom Error Response → 200, Response Page Path = `/index.html` |
+
+### HashRouter 대안 (Error Document 설정 불가할 때)
+
+CDN/Object Storage에서 Error Document를 쓸 수 없을 때만 사용하세요. 공유 URL이 `https://도메인/#/share/토큰` 형태가 됩니다.
+
+1. **빌드 시** 환경 변수로 Hash 라우팅 사용:
+   ```bash
+   VITE_USE_HASH_ROUTER=true npm run build
+   ```
+2. 앱에서 복사하는 공유 링크는 자동으로 **`/#/share/토큰`** 형식으로 생성됩니다.
+3. 이미 퍼뜨린 **`/share/토큰`** (슬래시 경로) 링크는 Error Document를 설정해야 동작합니다. HashRouter는 **새로 만드는 공유 링크**만 `#` 형식으로 바꿔 줍니다.
 
 ## 배포 체크리스트
 
@@ -255,7 +283,8 @@ location / {
 - [ ] 로컬에서 빌드 결과 테스트 (`npm run preview`)
 - [ ] CDN/서버에 업로드
 - [ ] 백엔드 CORS 설정 확인
-- [ ] SPA 라우팅 설정 확인
+- [ ] SPA 라우팅 설정 확인 (**CDN만 쓸 때**: Object Storage Error Document = `index.html` 또는 HashRouter 사용)
+- [ ] **공유 링크 직접 열기** 테스트: `https://도메인/share/토큰` 또는 `https://도메인/#/share/토큰` (HashRouter 사용 시)
 - [ ] 브라우저에서 배포된 사이트 테스트
 - [ ] API 호출 테스트
 - [ ] 이미지 업로드 테스트 (presigned URL)

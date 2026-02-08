@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AlbumProvider } from './contexts/AlbumContext';
 import Layout from './components/Layout/Layout';
@@ -103,15 +103,18 @@ function AppRoutes() {
   );
 }
 
+const useHashRouter = import.meta.env.VITE_USE_HASH_ROUTER === 'true';
+
 function App() {
+  const Router = useHashRouter ? HashRouter : BrowserRouter;
   return (
-    <BrowserRouter>
+    <Router>
       <AuthProvider>
         <AlbumProvider>
           <AppRoutes />
         </AlbumProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </Router>
   );
 }
 

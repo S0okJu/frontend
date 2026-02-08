@@ -20,9 +20,11 @@ function ShareLinkPanel({ album, onClose, onShareLinkChanged }) {
     ? (typeof album.shareLink === 'string' ? album.shareLink : album.shareLink.token || album.shareLink)
     : null;
   
-  const shareUrl = shareLinkToken 
-    ? `${window.location.origin}/share/${shareLinkToken}`
-    : null;
+  // CDN만 쓸 때 HashRouter 사용 시 공유 URL은 /#/share/토큰 (서버 설정 없이 동작)
+  const sharePath = import.meta.env.VITE_USE_HASH_ROUTER === 'true'
+    ? `/#/share/${shareLinkToken}`
+    : `/share/${shareLinkToken}`;
+  const shareUrl = shareLinkToken ? `${window.location.origin}${sharePath}` : null;
 
   const handleCreateLink = async () => {
     setIsLoading(true);
