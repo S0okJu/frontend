@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { apiEndpoints } from '../../config/api';
+import { apiEndpoints, getImageUrl } from '../../config/api';
 import './ImageGrid.css';
 
 function ImageGrid({ images, onImageClick, onDeleteImage }) {
@@ -30,10 +30,10 @@ function ImageGrid({ images, onImageClick, onDeleteImage }) {
 
       // CDN URL에서 파일 다운로드
       // Auth Token이 이미 URL에 ?token=... 형식으로 포함되어 있음
-      const response = await fetch(image.url, {
+      const imageRequestUrl = getImageUrl(image.url);
+      const response = await fetch(imageRequestUrl, {
         method: 'GET',
         mode: 'cors',
-        // CDN Auth Token은 URL 쿼리 파라미터로 포함되므로 별도 헤더 불필요
       });
 
       if (!response.ok) {
@@ -138,7 +138,7 @@ function ImageGrid({ images, onImageClick, onDeleteImage }) {
           >
             <div className="image-wrapper">
               <img 
-                src={image.url} 
+                src={getImageUrl(image.url)} 
                 alt={image.name}
                 loading="lazy"
               />

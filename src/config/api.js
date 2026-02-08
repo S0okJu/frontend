@@ -38,6 +38,16 @@ const getApiBaseUrl = () => {
 export const API_BASE_URL = getApiBaseUrl();
 
 /**
+ * 이미지 URL 반환. 상대 경로(백엔드 프록시)면 API_BASE_URL을 붙임.
+ * @param {string} url - API에서 받은 photo.url (절대 URL 또는 /photos/.../image?t=...)
+ */
+export function getImageUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_BASE_URL}${url}`;
+}
+
+/**
  * API 엔드포인트 헬퍼 함수
  */
 export const apiEndpoints = {
