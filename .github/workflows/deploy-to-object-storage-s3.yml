@@ -54,12 +54,13 @@ jobs:
           echo "Total size:"
           du -sh dist/
       
-      - name: Configure AWS CLI for NHN Cloud
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.NHN_S3_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.NHN_S3_SECRET_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      # NHN Cloud는 AWS가 아니므로 configure-aws-credentials 사용 시
+      # sts.kr1.amazonaws.com 조회로 ENOTFOUND 발생 → 환경 변수만 설정
+      - name: Configure S3 credentials for NHN Cloud
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.NHN_S3_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.NHN_S3_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=${{ env.AWS_REGION }}" >> $GITHUB_ENV
       
       - name: Upload to Object Storage (S3 API)
         run: |
