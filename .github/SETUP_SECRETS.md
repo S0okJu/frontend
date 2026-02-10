@@ -87,6 +87,18 @@ Secrets 목록에 다음 항목이 표시되어야 합니다:
 - ✅ `NHN_S3_ACCESS_KEY`
 - ✅ `NHN_S3_SECRET_KEY`
 
+### Failover Recovery 시 CDN 원본 자동 전환 (선택)
+
+**OBS Failover Recovery** 워크플로우에서 CDN 원본을 자동으로 바꾸려면 아래 CDN API용 Secret을 추가하세요. 없으면 워크플로우는 OBS 배포만 하고 CDN은 수동 변경해야 합니다.
+
+| Secret 이름 | 설명 | 확인 방법 |
+|-------------|------|-----------|
+| `CDN_APP_KEY` | NHN Cloud CDN API AppKey | 콘솔 우측 상단 **URL & Appkey** 메뉴 |
+| `CDN_SECRET_KEY` | CDN API 인증용 SecretKey | 동일 메뉴에서 발급 |
+| `CDN_DISTRIBUTION_ID` | CDN 서비스(배포) ID | CDN 콘솔에서 해당 서비스 선택 후 URL 또는 API 조회로 확인 |
+
+참고: [NHN Cloud CDN API v2.0 가이드](https://docs.nhncloud.com/ko/Contents%20Delivery/CDN/ko/api-guide-v2.0/)
+
 ## Object Storage 컨테이너 설정
 
 ### 1. 컨테이너 생성

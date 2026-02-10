@@ -2,7 +2,14 @@
 
 master 브랜치에 머지되면 자동으로 NHN Cloud Object Storage에 배포하는 GitHub Actions 워크플로우입니다.
 
-## 워크플로우 선택
+## 워크플로우 목록
+
+| 워크플로우 | 트리거 | 용도 |
+|------------|--------|------|
+| **Deploy to NHN Cloud Object Storage** (`deploy-to-object-storage.yml`) | push to main, 수동 | 일상 배포 (선택 리전 OBS 업로드) |
+| **OBS Failover Recovery** (`failover-recovery.yml`) | 수동만 | 단일 리전 OBS 장애 시 보조 리전 배포 + CDN 원본 전환 |
+
+## 배포 워크플로우 선택 (일상 배포용)
 
 두 가지 방식 중 하나를 선택하여 사용하세요:
 
@@ -221,40 +228,71 @@ https://your-cdn-domain.com/
 
 ## 장애 대응 (KR1 리전 장애 시)
 
-NHN Cloud Object Storage KR1 리전에 장애가 발생하면 **다른 리전(KR2, JP1)으로 배포를 전환**해 서비스를 재개할 수 있습니다.
+NHN Cloud Object Storage는 **리전 단위**로 제공되며, **리전 간 복제는 단방향**입니다. 따라서 한 리전(OBS)에 장애가 나면:
 
-**중요**: 빌드/배포 워크플로우는 **Object Storage에 파일을 올리는 것까지만** 수행합니다. **CDN 원본 서버를 새 리전으로 바꾸는 작업은 빌드·배포 과정에 포함되지 않으며**, NHN Cloud CDN 설정에서 별도로(수동 또는 다른 자동화로) 수행해야 합니다.
+1. **다른 리전 OBS로 트래픽을 전환**해야 하고  
+2. **CDN의 원본 서버를 해당 리전 OBS URL로 변경**해야 합니다.  
+3. 단방향 복제이므로, 장애 전에 보조 리전으로 복제된 데이터만 있다면 **최신 빌드가 아닐 수 있음** → 전환 시 **보조 리전에 현재 빌드물을 한 번 더 배포**하는 것이 안전합니다.
+
+### 자동 복구 워크플로우 (Failover Recovery) ⭐
+
+**OBS Failover Recovery (CDN 원본 전환)** 워크플로우(`failover-recovery.yml`)가 다음을 한 번에 수행합니다.
+
+| 단계 | 설명 |
+|------|------|
+| 1. 빌드 | 현재 브랜치 기준으로 프론트엔드 빌드 |
+| 2. OBS 배포 | 선택한 리전(kr1/kr2/jp1)의 Object Storage에 빌드물 업로드 (단방향 복제 갱신) |
+| 3. CDN 원본 전환 | (선택) NHN CDN API로 해당 CDN 서비스의 원본을 위 리전 OBS URL로 변경 |
+
+**실행 방법**
+
+- GitHub **Actions** → **OBS Failover Recovery (CDN 원본 전환)** → **Run workflow**
+- **failover_region**: 전환할 리전 선택 (`kr2` 또는 `jp1` = 장애 회피, `kr1` = 복구 후 원상 복귀)
+- **update_cdn_origin**: `true`면 CDN 원본까지 자동 변경(아래 Secret 설정 시), `false`면 OBS 배포만 하고 CDN은 수동 변경
+
+**CDN 자동 전환을 쓰려면** Repository Secrets에 다음을 추가하세요.
+
+| Secret | 설명 |
+|--------|------|
+| `CDN_APP_KEY` | NHN Cloud 콘솔 우측 상단 **URL & Appkey** 에서 확인 |
+| `CDN_SECRET_KEY` | 동일 메뉴에서 발급한 SecretKey (CDN API 인증용) |
+| `CDN_DISTRIBUTION_ID` | CDN 서비스(배포) ID (CDN API로 조회 또는 콘솔에서 확인) |
+
+이 세 가지가 없으면 워크플로우는 **OBS 배포만** 하고, CDN 원본 변경은 건너뛰며 경고만 출력합니다. 그때는 아래처럼 수동으로 CDN 원본을 바꾸면 됩니다.
 
 ### 사전 준비 (평상시)
 
 1. **보조 리전에 컨테이너 미리 생성**
    - NHN Cloud Console에서 **KR2**(한국 평촌) 또는 **JP1**(일본 도쿄) 리전 선택
    - 동일한 이름의 컨테이너(`photo-frontend`) 생성, 퍼블릭 읽기, Static Website 설정
-2. **S3 자격 증명**
-   - NHN Cloud S3 API 자격 증명은 **리전별로 동일**하게 사용 가능한 경우가 많습니다. 문서/콘솔에서 해당 리전 지원 여부 확인.
-   - 리전별로 다른 자격 증명이 필요하면 보조 리전용 Access/Secret Key를 발급해 두고, 장애 시 GitHub Secrets를 해당 키로 교체할 계획을 세워 두세요.
+2. **Identity 자격 증명**
+   - Failover Recovery는 기존 배포와 동일하게 **Swift API(Identity 토큰)** 를 사용합니다. `NHN_AUTH_URL`, `NHN_TENANT_ID`, `NHN_USERNAME`, `NHN_API_PASSWORD` 가 있으면 됩니다.
+3. **(선택) CDN API 자격 증명**
+   - CDN 원본 자동 전환을 쓰려면 `CDN_APP_KEY`, `CDN_SECRET_KEY`, `CDN_DISTRIBUTION_ID` 설정.
 
 ### 리전 전환 절차 (KR1 장애 발생 시)
 
-1. **보조 리전으로 배포**
-   - GitHub Actions > **Deploy to NHN Cloud Object Storage (S3 API)** > **Run workflow**
-   - **region** 입력에서 `kr2` 또는 `jp1` 선택 후 실행 (코드 수정 없음).
-2. **CDN 원본 서버 교체 (배포 파이프라인 외부 작업)**
-   - NHN Cloud CDN 콘솔에서 해당 CDN 서비스의 **원본 서버**를 아래 URL로 변경:
+1. **자동 복구 워크플로우 실행 (권장)**
+   - Actions → **OBS Failover Recovery (CDN 원본 전환)** → Run workflow
+   - **failover_region**: `kr2` 또는 `jp1` 선택
+   - **update_cdn_origin**: `true` (CDN Secret 설정했을 때) 또는 `false` 후 수동 변경
+2. **CDN 원본만 수동으로 바꾸는 경우**
+   - NHN Cloud CDN 콘솔에서 해당 CDN 서비스의 **원본 서버**를 다음으로 변경:
      - KR2: `https://kr2-api-object-storage.nhncloudservice.com/v1/AUTH_<TENANT_ID>/photo-frontend/`
      - JP1: `https://jp1-api-object-storage.nhncloudservice.com/v1/AUTH_<TENANT_ID>/photo-frontend/`
    - 필요 시 캐시 무효화 수행.
 3. **복구 후 (KR1 복구 시)**
-   - 워크플로우 수동 실행 시 region `kr1` 선택 후 재배포하고, CDN 원본을 다시 KR1 엔드포인트로 되돌림.
+   - Actions → **OBS Failover Recovery** → Run workflow → **failover_region**: `kr1` 선택 → 실행 (동일 워크플로우로 원상 복귀 가능).
 
 ### 요약
 
 | 항목 | 내용 |
 |------|------|
-| 배포 파이프라인이 하는 일 | 빌드 후 선택한 리전 Object Storage에 업로드 (끝) |
-| CDN 원본 교체 | **빌드/배포와 별개** — NHN Cloud CDN 설정에서 수동(또는 별도 자동화)으로 수행 |
-| 리전 전환 방법 | Actions에서 Run workflow → region으로 `kr2` 또는 `jp1` 선택 |
-| 사전 준비 | 보조 리전에 동일 컨테이너·설정 미리 생성 권장 |
+| 일반 배포 워크플로우 | 빌드 후 선택한 리전 OBS에 업로드 (CDN 원본 변경 없음) |
+| **Failover Recovery** | 빌드 → 선택 리전 OBS 배포 → (선택) CDN 원본을 해당 리전 OBS로 변경 |
+| OBS 복제 | 단방향 → 전환 시 보조 리전에 한 번 더 배포하는 것이 안전 |
+| 리전 전환 방법 | Actions → **OBS Failover Recovery** → failover_region 선택 후 실행 |
+| 사전 준비 | 보조 리전에 동일 컨테이너·설정 미리 생성, (선택) CDN API Secret 설정 |
 
 ## 문제 해결
 

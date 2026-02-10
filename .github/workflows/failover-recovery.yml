@@ -1,0 +1,177 @@
+# OBS 단일 리전 장애 시 보조 리전으로 전환 + CDN 원본 교체
+# OBS 복제는 단방향이므로, 전환 시 보조 리전에 최신 빌드물을 배포한 뒤 CDN 원본을 보조 리전으로 수정합니다.
+
+name: OBS Failover Recovery (CDN 원본 전환)
+
+on:
+  workflow_dispatch:
+    inputs:
+      failover_region:
+        description: '전환할 OBS 리전 (장애 시 kr2/jp1, 복구 후 kr1로 되돌리기)'
+        required: true
+        type: choice
+        options:
+          - kr1
+          - kr2
+          - jp1
+      update_cdn_origin:
+        description: 'CDN 원본 서버를 위 리전으로 변경'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  BUCKET_NAME: 'photo-frontend'
+  CDN_API_BASE: 'https://cdn.api.nhncloudservice.com/v2.0'
+
+jobs:
+  failover:
+    name: Build, Deploy to secondary OBS, Update CDN origin
+    runs-on: ubuntu-latest
+    env:
+      NHN_REGION: ${{ github.event.inputs.failover_region }}
+      VITE_API_BASE_URL: ${{ secrets.API_BASE_URL || '/api' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+
+      - name: Verify build output
+        run: |
+          echo "Build completed. Deploying to ${{ env.NHN_REGION }} (failover region)."
+          ls -lh dist/
+          du -sh dist/
+
+      - name: Get NHN Identity token
+        id: token
+        env:
+          NHN_AUTH_URL: ${{ secrets.NHN_AUTH_URL }}
+          NHN_TENANT_ID: ${{ secrets.NHN_TENANT_ID }}
+          NHN_USERNAME: ${{ secrets.NHN_USERNAME }}
+          NHN_API_PASSWORD: ${{ secrets.NHN_API_PASSWORD }}
+        run: |
+          if [ -z "$NHN_AUTH_URL" ] || [ -z "$NHN_TENANT_ID" ] || [ -z "$NHN_USERNAME" ] || [ -z "$NHN_API_PASSWORD" ]; then
+            echo "::error::필수 Secret이 비어 있습니다. NHN_AUTH_URL, NHN_TENANT_ID, NHN_USERNAME, NHN_API_PASSWORD 설정하세요."
+            exit 1
+          fi
+          RES=$(curl -s -X POST "${NHN_AUTH_URL%/}/tokens" \
+            -H "Content-Type: application/json" \
+            -d '{"auth":{"tenantId":"'"$NHN_TENANT_ID"'","passwordCredentials":{"username":"'"$NHN_USERNAME"'","password":"'"$NHN_API_PASSWORD"'"}}}')
+          TOKEN=$(echo "$RES" | jq -r '.access.token.id')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::Identity 토큰 발급 실패."
+            exit 1
+          fi
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Upload to Object Storage (failover region)
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+          BASE_URL: https://${{ env.NHN_REGION }}-api-object-storage.nhncloudservice.com/v1/AUTH_${{ secrets.NHN_TENANT_ID }}/${{ env.BUCKET_NAME }}
+        run: |
+          set -e
+          while IFS= read -r -d '' f; do
+            obj="${f#dist/}"
+            url="${BASE_URL}/${obj}"
+            url_enc=$(echo "$url" | sed 's/ /%20/g')
+            case "$f" in
+              *.html) ct="text/html" ;;
+              *.js)   ct="application/javascript" ;;
+              *.css)  ct="text/css" ;;
+              *.json) ct="application/json" ;;
+              *.ico)  ct="image/x-icon" ;;
+              *.png)  ct="image/png" ;;
+              *.jpg|*.jpeg) ct="image/jpeg" ;;
+              *.svg)  ct="image/svg+xml" ;;
+              *.woff2) ct="font/woff2" ;;
+              *.woff)  ct="font/woff" ;;
+              *)      ct="application/octet-stream" ;;
+            esac
+            echo "Uploading $obj -> ${{ env.NHN_REGION }}"
+            curl -sS -X PUT -H "X-Auth-Token: $TOKEN" -H "Content-Type: $ct" \
+              --data-binary "@$f" "$url_enc"
+          done < <(find dist -type f -print0)
+          echo "Upload to ${{ env.NHN_REGION }} completed."
+
+      - name: Set container public read (optional)
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          URL="https://${{ env.NHN_REGION }}-api-object-storage.nhncloudservice.com/v1/AUTH_${{ secrets.NHN_TENANT_ID }}/${{ env.BUCKET_NAME }}"
+          curl -sS -X POST -H "X-Auth-Token: $TOKEN" -H "X-Container-Read: .r:*" "$URL" || true
+
+      - name: Update CDN origin to failover region
+        if: github.event.inputs.update_cdn_origin == 'true'
+        env:
+          CDN_APP_KEY: ${{ secrets.CDN_APP_KEY }}
+          CDN_SECRET_KEY: ${{ secrets.CDN_SECRET_KEY }}
+          CDN_DISTRIBUTION_ID: ${{ secrets.CDN_DISTRIBUTION_ID }}
+          NHN_TENANT_ID: ${{ secrets.NHN_TENANT_ID }}
+        run: |
+          set -e
+          if [ -z "$CDN_APP_KEY" ] || [ -z "$CDN_SECRET_KEY" ] || [ -z "$CDN_DISTRIBUTION_ID" ]; then
+            echo "::warning::CDN 원본 변경을 건너뜁니다. CDN_APP_KEY, CDN_SECRET_KEY, CDN_DISTRIBUTION_ID 를 설정하면 자동 전환됩니다."
+            exit 0
+          fi
+          # OBS 호스트만 사용 (스키마 없음). 경로는 originPath로.
+          ORIGIN_HOST="${{ env.NHN_REGION }}-api-object-storage.nhncloudservice.com"
+          ORIGIN_PATH="/v1/AUTH_${NHN_TENANT_ID}/${{ env.BUCKET_NAME }}"
+          echo "Updating CDN origin to: $ORIGIN_HOST $ORIGIN_PATH"
+
+          # 기존 배포 설정 조회 (NHN CDN API: GET 응답에 header/body 포함)
+          RES=$(curl -sS -X GET \
+            "${CDN_API_BASE}/appKeys/${CDN_APP_KEY}/distributions/${CDN_DISTRIBUTION_ID}" \
+            -H "Authorization: ${CDN_SECRET_KEY}")
+          echo "$RES" | jq . > /tmp/cdn_get.json || true
+
+          # origins만 교체한 body 생성 (GET 응답의 .body 기준)
+          BODY=$(echo "$RES" | jq --arg host "$ORIGIN_HOST" --arg path "$ORIGIN_PATH" \
+            '.body.origins = [{ "origin": $host, "originPath": $path, "httpPort": 80, "httpsPort": 443 }] | .body')
+          echo "$BODY" | jq . > /tmp/cdn_put_body.json
+
+          PUT_RES=$(curl -sS -w "\n%{http_code}" -X PUT \
+            "${CDN_API_BASE}/appKeys/${CDN_APP_KEY}/distributions/${CDN_DISTRIBUTION_ID}" \
+            -H "Authorization: ${CDN_SECRET_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+          HTTP_CODE=$(echo "$PUT_RES" | tail -n1)
+          BODY_RES=$(echo "$PUT_RES" | sed '$d')
+          echo "$BODY_RES" | jq . || true
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "CDN origin updated successfully."
+          else
+            echo "::error::CDN origin update failed (HTTP $HTTP_CODE). Check CDN API docs and distribution config."
+            echo "$BODY_RES"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Failover Recovery 결과" >> $GITHUB_STEP_SUMMARY
+          echo "- **전환 리전**: ${{ env.NHN_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **OBS 배포**: 완료 (동일 빌드물 업로드)" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.update_cdn_origin }}" = "true" ]; then
+            echo "- **CDN 원본**: 업데이트 시도 (Secret 설정 시 적용됨)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **CDN 원본**: 수동으로 변경 필요" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "OBS 접속 URL 예시:" >> $GITHUB_STEP_SUMMARY
+          echo "\`https://${{ env.NHN_REGION }}-api-object-storage.nhncloudservice.com/v1/AUTH_<TENANT_ID>/${{ env.BUCKET_NAME }}/index.html\`" >> $GITHUB_STEP_SUMMARY
